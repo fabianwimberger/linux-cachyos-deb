@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavor: [x64v4, x64v3]
+        flavor: [x64v4, x64v3, znver4]
 
     steps:
       - uses: actions/checkout@v4
