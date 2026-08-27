@@ -41,7 +41,23 @@ jobs:
       - run: make image
       - run: make preflight
       - run: make fetch
-      - run: make config FLAVOR=${{ matrix.flavor }}
+      - name: fetch autofdo profile
+        env:
+          PROFILE_DEPLOY_KEY: ${{ secrets.AUTOFDO_DEPLOY_KEY }}
+        run: |
+          if [ -z "$PROFILE_DEPLOY_KEY" ]; then
+            echo 'no AUTOFDO_DEPLOY_KEY secret — building without a profile'
+            exit 0
+          fi
+          mkdir -p ~/.ssh
+          ssh-keyscan github.com >> ~/.ssh/known_hosts
+          echo "$PROFILE_DEPLOY_KEY" > ~/.ssh/id_deploy
+          chmod 600 ~/.ssh/id_deploy
+          GIT_SSH_COMMAND='ssh -i ~/.ssh/id_deploy' \
+            git clone --depth 1 git@github.com:fabianwimberger/linux-cachyos-deb-profiles.git /tmp/profiles
+          mkdir -p profiles
+          cp /tmp/profiles/vmlinux.afdo profiles/
+
       - run: make build FLAVOR=${{ matrix.flavor }}
       - run: make package FLAVOR=${{ matrix.flavor }}
 
