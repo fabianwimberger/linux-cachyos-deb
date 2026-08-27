@@ -1,83 +1,55 @@
 # Safety
 
-What can go wrong installing a third-party kernel on Ubuntu, and what this
-project does about it.
+What to know before installing a third-party kernel on Ubuntu.
 
-## Machine does not boot
+## Boot failure
 
-Ubuntu's kernel is never removed or replaced. The packages carry a full version
-in their name (`linux-image-7.2.0-cachyos-x64v4`), so they install alongside
-`linux-image-generic` and both stay in the GRUB menu.
+Ubuntu's kernel is never removed or replaced — both stay in the GRUB menu. For
+the first boot use `grub-reboot` for a one-shot boot, so a power cycle returns
+to the old kernel with nothing to undo. Removal is `apt remove`.
 
-For the first boot use a `grub-reboot` one-shot entry rather than changing the
-default. If the kernel panics or hangs, power-cycling returns to the previous
-default. Nothing has to be undone from a rescue shell.
+## CPU baseline
 
-Removal is `apt remove linux-image-7.2.0-cachyos-x64vN`; the postrm hooks
-regenerate GRUB and the initramfs.
-
-## Wrong CPU baseline
-
-An x86-64-v4 kernel on a CPU without AVX-512 produces an immediate reset at
-boot, before anything can log why. The image package's `preinst` reads
-`/proc/cpuinfo` and refuses to install if the required flags are absent.
+An x86-64-v4 kernel on a CPU without AVX-512 resets at boot before anything can
+log why. The image's `preinst` reads `/proc/cpuinfo` and refuses to install if
+the required flags are missing.
 
 ## Secure Boot
 
-These kernels are unsigned, so they will not boot with Secure Boot enabled.
-Options:
+The kernel is signed at install time with the machine's own MOK — the key
+Ubuntu already generates for DKMS. Disable Secure Boot, or enrol that MOK with
+`mokutil`. Only Canonical can sign for the Ubuntu shim, so there's no
+shim-signed chain here.
 
-1. Disable Secure Boot in firmware.
-2. Sign the kernel and its modules with a local MOK (`sbsign`, `scripts/sign-file`
-   from the headers package) and enrol it with `mokutil`. Has to be repeated
-   after each kernel update.
+## AppArmor
 
-There is no shim-signed chain here and there will not be one; only Canonical can
-sign for the Ubuntu shim.
-
-## AppArmor and snapd
-
-CachyOS's `CONFIG_LSM` has no `apparmor` entry. Booting such a kernel on Ubuntu
-leaves snapd, LXD and every profile in `/etc/apparmor.d` unenforced, silently.
-`config/fragments/ubuntu-compat.conf` puts AppArmor back into the LSM list, and
-`verify-config.sh` fails the build if it is missing from the generated config.
-
-Ubuntu's own AppArmor carries Canonical patches that are not upstream. Profiles
-that rely on those features may not load. Check `aa-status` after the first boot.
+CachyOS's `CONFIG_LSM` has no AppArmor, which on Ubuntu would leave snapd and
+every `/etc/apparmor.d` profile unenforced silently. Ubuntu's config here puts
+it back — `verify-config.sh` fails the build if it's missing. Check
+`aa-status` after the first boot; Ubuntu's AppArmor carries Canonical patches
+that upstream may not, so some profiles might not load.
 
 ## DKMS modules
 
-Out-of-tree modules (nvidia, virtualbox, it87, …) rebuild against the new
-headers through `/etc/kernel/postinst.d/dkms`, which needs the matching
-`linux-headers` package installed — the metapackage pulls it in.
-
-Check `dkms status -k <release>` after installing: a DKMS failure surfaces as
-missing hardware, not as an install error.
-
-These kernels are built with ThinLTO, so modules must be compiled by clang, and
-DKMS invokes bare `clang` — `/usr/bin/clang` on the target. When `LLVM_VERSION`
-in `kernel.env` is a number, that binary is older than the one the kernel was
-built with and DKMS fails on flags it does not recognise. dpkg also sanitises
-PATH for maintainer scripts, so the unsuffixed tools in `/usr/bin` have to be the
-matching version — via `dpkg-divert` — unless the kernel is built with
-`LLVM_VERSION=distro`.
+Out-of-tree modules (nvidia, VirtualBox, …) rebuild through DKMS on install,
+which needs the matching `linux-headers` package — the metapackage pulls it in.
+These kernels are built with ThinLTO, so modules must be compiled by clang.
+Check `dkms status -k <release>` after installing; a failed build surfaces as
+missing hardware, not an install error. With a non-distro `LLVM_VERSION`, the
+unsuffixed `/usr/bin/clang` must match the kernel's clang (via `dpkg-divert`).
 
 ## ZFS
 
-Ubuntu builds ZFS modules as part of its own kernel packages
-(`linux-main-modules-zfs-*`). This kernel has no ZFS. A root-on-ZFS system
-cannot boot it, and a system with ZFS data pools loses access to them while
-running it.
+This kernel has no ZFS. Ubuntu's ZFS modules aren't built here, so a
+root-on-ZFS system can't boot it and ZFS pools are inaccessible while it runs.
 
-## Security updates
+## Updates
 
-Ubuntu backports CVE fixes into its kernel on Canonical's schedule and offers
-livepatch. Neither applies here. Fixes arrive when upstream releases a 7.2.x
-point release and this repository rebuilds against it. Track upstream stable, or
-stay on Ubuntu's kernel.
+Fixes arrive on upstream's 7.2.x point-release schedule, not Canonical's, and
+there's no Livepatch. Rebuild against a new tag to get them.
 
-## Source availability
+## Source
 
 The packages are derived from GPL-2.0 source. The exact tarball, its signature
-and its hash are pinned in `kernel.env`, and every configuration difference is
-in `config/`. That, plus the upstream URL, is what the license requires.
+and its hash are pinned in `kernel.env`, and every config difference lives in
+`config/` — that's what the license requires.

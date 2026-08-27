@@ -2,10 +2,8 @@ FROM ubuntu:26.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-# "distro" uses the clang in the Ubuntu archive, which is what /usr/bin/clang
-# points at on every target machine — DKMS calls that binary, so a newer
-# toolchain here makes every out-of-tree module fail to build. A number
-# installs that release from apt.llvm.org instead.
+# distro = Ubuntu's clang (what /usr/bin/clang is on targets, so DKMS works);
+# a number pulls that release from apt.llvm.org instead.
 ARG LLVM_VERSION=distro
 
 RUN apt-get update \
