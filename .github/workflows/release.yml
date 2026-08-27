@@ -1,0 +1,85 @@
+name: release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  kernel:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 350
+    strategy:
+      fail-fast: false
+      matrix:
+        flavor: [x64v4, x64v3]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: free disk space
+        run: |
+          sudo rm -rf /opt/hostedtoolcache /usr/local/lib/android \
+                      /usr/share/dotnet /usr/local/.ghcup /opt/ghc \
+                      /usr/local/share/powershell /usr/share/swift
+          sudo docker image prune -af
+          df -h /
+
+      - run: make image
+      - run: make preflight
+      - run: make fetch
+      - run: make config FLAVOR=${{ matrix.flavor }}
+      - run: make build FLAVOR=${{ matrix.flavor }}
+      - run: make package FLAVOR=${{ matrix.flavor }}
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ matrix.flavor }}
+          path: out/${{ matrix.flavor }}/*.deb
+          retention-days: 1
+
+  publish:
+    needs: kernel
+    runs-on: ubuntu-26.04
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: debs-*
+          path: artifacts
+
+      - name: lay packages out as make expects
+        run: |
+          for dir in artifacts/debs-*; do
+            flavor=${dir##*debs-}
+            mkdir -p "out/$flavor"
+            mv "$dir"/*.deb "out/$flavor/"
+          done
+          ls -lhR out
+
+      - run: make image
+      - run: make repo
+
+      - name: sign the repository
+        env:
+          SIGNING_KEY: ${{ secrets.REPO_SIGNING_KEY }}
+        run: |
+          echo "$SIGNING_KEY" | gpg --batch --import
+          fpr=$(gpg --list-secret-keys --with-colons | awk -F: '/^fpr:/ {print $10; exit}')
+          export REPO_SIGN_KEY="$fpr"
+          make sign
+          test -f repo/InRelease
+
+      - name: publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" \
+            --title "$GITHUB_REF_NAME" \
+            --generate-notes \
+            repo/*

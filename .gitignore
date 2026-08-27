@@ -1,0 +1,7 @@
+src/
+work/
+out/
+repo/
+*.deb
+*.log
+profiles/
