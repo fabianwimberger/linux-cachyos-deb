@@ -41,6 +41,7 @@ jobs:
       - run: make image
       - run: make preflight
       - run: make fetch
+
       - name: fetch autofdo profile
         env:
           PROFILE_DEPLOY_KEY: ${{ secrets.AUTOFDO_DEPLOY_KEY }}
@@ -58,6 +59,7 @@ jobs:
           mkdir -p profiles
           cp /tmp/profiles/vmlinux.afdo profiles/
 
+      - run: make config FLAVOR=${{ matrix.flavor }}
       - run: make build FLAVOR=${{ matrix.flavor }}
       - run: make package FLAVOR=${{ matrix.flavor }}
 
