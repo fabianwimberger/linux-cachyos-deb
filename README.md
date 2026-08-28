@@ -1,4 +1,4 @@
-[![build](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/build.yml/badge.svg)](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/build.yml)
+[![checks](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/checks.yml/badge.svg)](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/checks.yml)
 [![License: GPL-2.0](https://img.shields.io/badge/License-GPL--2.0-blue.svg)](LICENSE)
 
 # linux-cachyos-deb
