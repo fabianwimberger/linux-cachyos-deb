@@ -1,0 +1,38 @@
+name: checks
+
+on:
+  push:
+    branches: [main, develop]
+    paths-ignore: ['**.md', 'docs/**']
+  pull_request:
+    branches: [main, develop]
+    paths-ignore: ['**.md', 'docs/**']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  config:
+    runs-on: ubuntu-26.04
+    # Source fetch + per-flavor config generation only, no compile. The real
+    # build runs on release tags (release.yml).
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v7
+
+      - run: make image
+      - run: make preflight
+      - run: make fetch
+
+      - name: verify config for every flavor
+        run: |
+          . ./kernel.env
+          for f in $FLAVORS; do
+            make config FLAVOR="$f"
+          done
