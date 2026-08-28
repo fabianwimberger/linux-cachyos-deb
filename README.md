@@ -55,7 +55,44 @@ make everything  # all flavors from kernel.env, plus the apt repo
 - **Ubuntu base config** — starts from Ubuntu's own config, so the whole delta is a few greppable fragment files in `config/fragments/`.
 - **Coexists with Ubuntu's kernel** — nothing is replaced; upgrades flow through `apt` like any other package.
 - **CPU guard** — the image refuses to install on hardware below its baseline (or on non-AMD for znver4) rather than producing an unbootable system.
-- **Secure Boot** — install signs the image with the machine's own MOK, the key Ubuntu already creates for DKMS.
+## Benchmarks
+
+Measured on KVM VMs with CPU passthrough on Zen 4, comparing the stock Ubuntu
+kernel against `7.2.0-cachyos-znver4` installed from this repo. Each metric is
+the mean of three runs on the same VM. `cpu`/`mem`/`threads` are sysbench;
+`tmpfs_*` and `disk_*` are fio; `loop` is iperf3 over loopback.
+
+Ubuntu 24.04 (stock 6.8.0-138):
+
+| metric | stock | cachyos | Δ |
+|---|---|---|---|
+| sysbench cpu | 23512/s | 23155/s | −1.5% |
+| sysbench memory | 26644 MiB/s | 26234 MiB/s | −1.5% |
+| sysbench threads | 5981/s | 8496/s | **+42%** |
+| fio tmpfs 4k randread | 118923 IOPS | 184748 IOPS | **+55%** |
+| fio tmpfs 4k randwrite | 92051 IOPS | 154443 IOPS | **+68%** |
+| fio disk 4k randread | 119448 IOPS | 181815 IOPS | **+52%** |
+| fio disk 1m seqread | 28349 MiB/s | 63146 MiB/s | **+123%** |
+| iperf3 loopback | 209 Gbit/s | 278 Gbit/s | **+33%** |
+
+Ubuntu 26.04 (stock 7.0.0-30):
+
+| metric | stock | cachyos | Δ |
+|---|---|---|---|
+| sysbench cpu | 20830/s | 21001/s | +1% |
+| sysbench memory | 26456 MiB/s | 26800 MiB/s | +1% |
+| sysbench threads | 5684/s | 8387/s | **+48%** |
+| fio tmpfs 4k randread | 523905 IOPS | 563873 IOPS | **+8%** |
+| fio tmpfs 4k randwrite | 485729 IOPS | 530348 IOPS | **+9%** |
+| fio disk 4k randread | 166946 IOPS | 195248 IOPS | **+17%** |
+| fio disk 1m seqread | 27771 MiB/s | 59280 MiB/s | **+113%** |
+| iperf3 loopback | 210 Gbit/s | 270 Gbit/s | **+29%** |
+
+The consistent wins are threading, block I/O and loopback throughput; pure
+CPU and memory are flat. What the table does not isolate: the cachyos kernel is
+two upstream releases ahead of stock 24.04/26.04 (`7.2` vs `6.8`/`7.0`), so part
+of the I/O gain is upstream 7.2, not this tuning. Treat these as VM-relative
+indicators, not absolute figures.
 
 ## Updating
 
