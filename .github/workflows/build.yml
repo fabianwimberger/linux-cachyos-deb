@@ -28,7 +28,7 @@ jobs:
         flavor: [x64v4, x64v3, znver4]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: free disk space
         run: |
@@ -68,7 +68,7 @@ jobs:
           ls -lh out/${{ matrix.flavor }}
           df -h /
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: debs-${{ matrix.flavor }}
           path: out/${{ matrix.flavor }}/*.deb

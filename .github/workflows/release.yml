@@ -17,7 +17,7 @@ jobs:
         flavor: [x64v4, x64v3, znver4]
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: free disk space
         run: |
@@ -52,7 +52,7 @@ jobs:
       - run: make build FLAVOR=${{ matrix.flavor }}
       - run: make package FLAVOR=${{ matrix.flavor }}
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: debs-${{ matrix.flavor }}
           path: out/${{ matrix.flavor }}/*.deb
@@ -64,9 +64,9 @@ jobs:
     timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           pattern: debs-*
           path: artifacts
