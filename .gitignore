@@ -4,4 +4,5 @@ out/
 repo/
 *.deb
 *.log
+BENCH-NOTES.md
 profiles/
