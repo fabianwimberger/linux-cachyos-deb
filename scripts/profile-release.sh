@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-shot automation for refreshing the AutoFDO profile on a new release.
 #
-#   scripts/profile-release.sh <ssh-host> [total-seconds] [image-tag]
+#   scripts/profile-release.sh <ssh-host> [total-seconds]
 #
 # Flow: start the driver-mixing load in the background on the target, record +
 # convert + merge a profile of it (make profile), stop the load, gate the result
@@ -21,16 +21,26 @@ TOTAL=${2:-1800}
 [ -n "$TARGET" ] || die "usage: scripts/profile-release.sh <ssh-host> [total-seconds]"
 [ -n "$(command -v gh)" ] || die "gh not installed (for the upload step)"
 
-SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=6)
+# Host-key checking off, and never touching the real known_hosts: this
+# target's key legitimately changes whenever its kernel or OS gets
+# reinstalled, which is routine for this kind of target, not a MITM signal.
+SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ServerAliveInterval=15 -o ServerAliveCountMax=6
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 [ "$TARGET" != local ] || die "profile-release needs a real remote target, not 'local'"
 
 say "target $TARGET; total ${TOTAL}s; flavor $FLAVOR"
 
 # 1. load runs on the target in the background while we record.
+# The script must land as a real file and be launched by path: a
+# nohup'd `bash -s ... < /dev/null` run over a stdin-piped script never
+# sees that script (its own </dev/null wins), and a backgrounded process
+# started from an ssh command that's still attached to the closing ssh
+# session can vanish with it even under nohup.
 say "starting load on $TARGET (scripts/profile-load.sh $TOTAL)"
+scp "${SSH_OPTS[@]}" -q "$ROOT/scripts/profile-load.sh" "$TARGET:/var/tmp/profile-load.sh" \
+    || die "could not copy profile-load.sh to $TARGET"
 ssh "${SSH_OPTS[@]}" "$TARGET" \
-    "nohup bash -s $TOTAL < /dev/null > /var/tmp/profile-load.log 2>&1 &" \
-    < "$ROOT/scripts/profile-load.sh" \
+    "nohup bash /var/tmp/profile-load.sh $TOTAL < /dev/null > /var/tmp/profile-load.log 2>&1 & disown" \
     || die "could not start load on $TARGET"
 ssh "${SSH_OPTS[@]}" "$TARGET" \
     "echo started; pgrep -f profile-load.sh >/dev/null && echo 'load running' || echo 'load FAILED to start'" \

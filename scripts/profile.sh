@@ -45,9 +45,13 @@ PERIOD=${AUTOFDO_PERIOD:-1000000}
 # /var/tmp, not /tmp: /tmp is tmpfs on at least one target, and writing the
 # recording into RAM competes with the workload being profiled.
 # The host driving this may be on wifi, and a run spans an hour of transfers,
-# so a momentary drop must not end the run.
+# so a momentary drop must not end the run. Host-key checking is off, and the
+# real known_hosts is never touched: this target's key legitimately changes
+# whenever its kernel or OS gets reinstalled, which is routine for this kind
+# of target.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=5
-          -o ServerAliveInterval=15 -o ServerAliveCountMax=6)
+          -o ServerAliveInterval=15 -o ServerAliveCountMax=6
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
 
 retry() {
     local n=0

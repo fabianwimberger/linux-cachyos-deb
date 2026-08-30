@@ -118,12 +118,12 @@ make everything
 
 | Variable | Default | Description |
 |---|---|---|
-| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.0-1` | upstream release to build; hash pinned |
+| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.2-1` | upstream release to build; hash pinned |
 | `FLAVORS` | `x64v4 x64v3 znver4` | flavors built by `make everything` |
 | `PKGREL` | `4` | Debian revision; bump when only the config changes |
 | `LLVM_VERSION` | `distro` | `distro` = Ubuntu's clang, a number = apt.llvm.org release |
 | `UBUNTU_SERIES` | `26.04` | Ubuntu the container/packages target |
-| `MAINTAINER` | — | package Maintainer field |
+| `MAINTAINER` | `linux-cachyos-deb <noreply@users.noreply.github.com>` | package Maintainer field |
 
 ## License
 
