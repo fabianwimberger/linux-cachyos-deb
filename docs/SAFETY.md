@@ -35,8 +35,10 @@ Out-of-tree modules (nvidia, VirtualBox, …) rebuild through DKMS on install,
 which needs the matching `linux-headers` package — the metapackage pulls it in.
 These kernels are built with ThinLTO, so modules must be compiled by clang.
 Check `dkms status -k <release>` after installing; a failed build surfaces as
-missing hardware, not an install error. With a non-distro `LLVM_VERSION`, the
-unsuffixed `/usr/bin/clang` must match the kernel's clang (via `dpkg-divert`).
+missing hardware, not an install error. With a non-distro `LLVM_VERSION`, DKMS
+still invokes the unsuffixed `clang`/`lld`, so you need to point that at the
+kernel's clang yourself — e.g. `dpkg-divert` to the versioned binary — the
+package only depends on `clang-N`, it doesn't set this up for you.
 
 ## ZFS
 

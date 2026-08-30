@@ -10,7 +10,7 @@ export FLAVOR
 # taken as independent prerequisites and run concurrently.
 .NOTPARALLEL:
 
-.PHONY: image preflight fetch config build package repo sign profile profile-report profile-release serve all everything clean distclean
+.PHONY: image preflight fetch config build package repo sign profile profile-report profile-release bench serve all everything clean distclean
 
 image:      ; @docker build --build-arg LLVM_VERSION=$(shell . ./kernel.env && echo $$LLVM_VERSION) -t $(IMAGE) docker/
 preflight:  ; @bash scripts/preflight.sh
@@ -27,6 +27,8 @@ profile-report: ; @bash scripts/profile-report.sh $(MIN)
 # Full one-shot on a new release: load -> record -> gate -> upload to CI repo.
 # HOST=<ssh-host> SECS=<total>
 profile-release: ; @bash scripts/profile-release.sh $(HOST) $(SECS)
+# HOST=<ssh-host> LABEL=<name, default uname -r> -> profiles/bench-<LABEL>.txt
+bench:      ; @bash scripts/bench.sh $(HOST) $(LABEL)
 
 # One flavor, end to end.
 all:
