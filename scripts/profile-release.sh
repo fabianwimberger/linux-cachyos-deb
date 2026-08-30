@@ -40,7 +40,7 @@ say "starting load on $TARGET (scripts/profile-load.sh $TOTAL)"
 scp "${SSH_OPTS[@]}" -q "$ROOT/scripts/profile-load.sh" "$TARGET:/var/tmp/profile-load.sh" \
     || die "could not copy profile-load.sh to $TARGET"
 ssh "${SSH_OPTS[@]}" "$TARGET" \
-    "nohup bash /var/tmp/profile-load.sh $TOTAL < /dev/null > /var/tmp/profile-load.log 2>&1 & disown" \
+    "STRICT=${STRICT:-1} nohup bash /var/tmp/profile-load.sh $TOTAL < /dev/null > /var/tmp/profile-load.log 2>&1 & disown" \
     || die "could not start load on $TARGET"
 ssh "${SSH_OPTS[@]}" "$TARGET" \
     "echo started; pgrep -f profile-load.sh >/dev/null && echo 'load running' || echo 'load FAILED to start'" \
