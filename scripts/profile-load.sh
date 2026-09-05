@@ -30,6 +30,11 @@
 # The host needs the profile prerequisites (perf, kptr_restrict=0,
 # perf_event_paranoid<=0) which profile.sh already checks.
 #
+# STRICT=1 (passed by scripts/profile-release.sh) makes the run fail fast
+# when core training tools are absent, so a degraded mix on a freshly
+# reinstalled host cannot produce an hour of near-idle noise. A final
+# phase summary lists which driver mix actually ran — and which skipped.
+#
 # The desktop/video/audio/browser phases only run when a live graphical
 # session is present (an Ubuntu Desktop target with someone logged in) — they
 # exercise the compositor/display stack that the headless VAAPI phase's
@@ -144,15 +149,15 @@ teardown_containers() {
 
 phase_storage_nvme_readonly() {
     say "storage: read-only fio against internal NVMe (never writes)"
-    run "fio" || return 0
+    run "fio" || return 1
     local mnt target
     # The mount is x-systemd.automount (no root needed at runtime): it only
     # appears once something stats the mountpoint, which this triggers.
     [ -d /mnt/nvme-ro ] && stat /mnt/nvme-ro >/dev/null 2>&1
     mnt=$(mount | awk '/nvme0n1/ {print $3; exit}')
-    [ -n "$mnt" ] || { say "storage: internal NVMe not mounted, skipping"; return; }
+    [ -n "$mnt" ] || { say "storage: internal NVMe not mounted, skipping"; return 1; }
     target=$(find "$mnt" -maxdepth 4 -type f -size +200M -readable 2>/dev/null | head -1)
-    [ -n "$target" ] || { say "storage: no suitable read target on internal NVMe, skipping"; return; }
+    [ -n "$target" ] || { say "storage: no suitable read target on internal NVMe, skipping"; return 1; }
     # --readonly is fio's own hard guard: the job refuses to run at all if its
     # rw mode could ever write, on top of --rw=randread already being read-only.
     timeout 60 fio --name=prf-nvme-ro --readonly --rw=randread --bs=4k \
@@ -162,6 +167,8 @@ phase_storage_nvme_readonly() {
 
 phase_cpu() {
     say "cpu: parallel compile + openssl"
+    run "cc" || run "openssl" || run "sysbench" || return 1
+
     # A parallel kernel/module-style compile is a heavy CPU + syscall +
     # scheduler load; repeated rounds for a sustained window instead of one
     # burst that finishes before the scheduler ever gets under real pressure.
@@ -188,6 +195,8 @@ phase_cpu() {
 
 phase_memory() {
     say "memory: stream-like copy band"
+    run "python3" || run "sysbench" || return 1
+
     if run "python3"; then
         timeout 90 python3 - <<'PY' 2>/dev/null || true
 n = 200_000_000  # ~1.6 GiB
@@ -203,8 +212,8 @@ PY
 
 phase_memory_pressure() {
     say "memory: fill RAM to force zram swap-out (zstd compress/decompress)"
-    run "python3" || return 0
-    swapon --show 2>/dev/null | grep -qi zram || { say "memory: no zram swap configured, skipping"; return; }
+    run "python3" || return 1
+    swapon --show 2>/dev/null | grep -qi zram || { say "memory: no zram swap configured, skipping"; return 1; }
     # Total RAM plus a fixed overflow, not a fraction of it: with most of
     # physical RAM typically free, allocating even 90% of total RAM still
     # comfortably fits without swapping anything -- reclaim only kicks in
@@ -220,18 +229,22 @@ overflow = 4 * (1 << 30)  # 4 GiB beyond physical RAM
 target = total + overflow
 
 buf = bytearray(target)
-chunk = os.urandom(1 << 20)  # 1 MiB of real entropy, tiled to fill the buffer
+# Low-entropy 251-byte cycle: compressible, so zram spends on real data
+# movement instead of an incompressible-noise benchmark that no real fleet runs.
+chunk = bytes(i % 251 for i in range(1 << 20))
 n = len(chunk)
 for i in range(0, len(buf), n):
     end = min(i + n, len(buf))
     buf[i:end] = chunk[: end - i]
 
-time.sleep(8)  # held resident so the kernel has real pressure to react to
+time.sleep(2)  # brief hold so reclaim kicks in without the phase dominating the profile
 PY
 }
 
 phase_storage() {
     say "storage: fio on the home filesystem"
+    run "fio" || return 1
+
     # $HOME, not /home: /home itself is root:root 755, so writing there as a
     # regular user fails with EACCES before fio does any real I/O.
     if run "fio" && [ -d "$HOME" ]; then
@@ -259,18 +272,20 @@ phase_storage() {
 
 phase_storage_multifs() {
     say "storage: fio across xfs/btrfs/f2fs loopback images (external disk only)"
-    run "fio" || return 0
-    local fs mnt
+    run "fio" || return 1
+    local fs mnt found=
     for fs in xfs btrfs f2fs; do
         mnt="/mnt/fsdiv-$fs"
         # Set up once as root ahead of time; a host without it just has no
         # mountpoint here, so this quietly covers only what was prepared.
         mountpoint -q "$mnt" 2>/dev/null || continue
+        found=1
         (cd "$mnt" && timeout 60 fio --name=prf --size=512m --bs=4k \
             --rw=randrw --rwmixread=70 --ioengine=libaio --direct=1 --iodepth=16 \
             --time_based --runtime=40 --group_reporting >/dev/null 2>&1) || true
         rm -f "$mnt"/prf* 2>/dev/null
     done
+    [ -n "$found" ]
 }
 
 phase_gpu_vaapi() {
@@ -296,15 +311,15 @@ phase_gpu_vaapi() {
 
 phase_gpu_rocm() {
     say "gpu: ROCm GEMM (real rocBLAS via HIP, containerised — matches Frigate's ROCm path)"
-    run "docker" || return 0
-    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prf-rocm || return 0
-    docker exec prf-rocm test -x /tmp/gemm >/dev/null 2>&1 || return 0
+    run "docker" || return 1
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prf-rocm || return 1
+    docker exec prf-rocm test -x /tmp/gemm >/dev/null 2>&1 || return 1
     timeout 100 docker exec -e HSA_OVERRIDE_GFX_VERSION=11.0.0 prf-rocm /tmp/gemm 4096 90 >/dev/null 2>&1 || true
 }
 
 phase_audio() {
     say "audio: opus + aac encode/decode"
-    run "ffmpeg" || return 0
+    run "ffmpeg" || return 1
     tmp=$(mktemp -d)
     timeout 20 ffmpeg -hide_banner -f lavfi -i "sine=frequency=440:duration=30" \
         -f lavfi -i "sine=frequency=880:duration=30" -filter_complex amix=inputs=2 \
@@ -320,6 +335,9 @@ phase_audio() {
 
 phase_db() {
     say "db: postgres + valkey query churn"
+    run "docker" || return 1
+    local ok=0
+
     if run "docker" && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prf-pg; then
         for _ in 1 2 3; do
             timeout 30 docker exec prf-pg psql -U postgres -c \
@@ -329,16 +347,19 @@ phase_db() {
                  DELETE FROM t WHERE i < (SELECT COALESCE(max(i),0) - 30000 FROM t);" \
                 >/dev/null 2>&1 || true
         done
+        ok=1
     fi
     if run "redis-benchmark" && docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prf-redis; then
         timeout 60 redis-benchmark -h 127.0.0.1 -p 16379 -q -n 150000 -c 30 >/dev/null 2>&1 || true
+        ok=1
     fi
+    [ "$ok" = 1 ]
 }
 
 phase_mqtt() {
     say "mqtt: pub/sub burst"
-    run "mosquitto_pub" && run "mosquitto_sub" || return 0
-    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prf-mosquitto || return 0
+    run "mosquitto_pub" && run "mosquitto_sub" || return 1
+    docker ps --format '{{.Names}}' 2>/dev/null | grep -qx prf-mosquitto || return 1
     timeout 60 mosquitto_sub -h 127.0.0.1 -p 11883 -t 'prf/#' -C 1000 >/dev/null 2>&1 &
     subpid=$!
     for i in $(seq 1 1000); do
@@ -349,7 +370,7 @@ phase_mqtt() {
 
 phase_proxy_tls() {
     say "proxy: TLS handshake + request churn"
-    run "openssl" || return 0
+    run "openssl" || return 1
     tmp=$(mktemp -d)
     openssl req -x509 -newkey rsa:2048 -keyout "$tmp/key.pem" -out "$tmp/cert.pem" \
         -days 1 -nodes -subj "/CN=prf" >/dev/null 2>&1 || { rm -rf "$tmp"; return; }
@@ -365,7 +386,7 @@ phase_proxy_tls() {
 
 phase_dns() {
     say "dns: resolver query burst"
-    run "dig" || return 0
+    run "dig" || return 1
     local domains=(github.com wikipedia.org google.com cloudflare.com kernel.org) i
     for i in $(seq 1 100); do
         dig +short +time=2 +tries=1 "${domains[$((i % ${#domains[@]}))]}" >/dev/null 2>&1 || true
@@ -374,7 +395,7 @@ phase_dns() {
 
 phase_wireguard() {
     say "wireguard: encrypted tunnel traffic"
-    ip link show wg0 >/dev/null 2>&1 || { say "wireguard: interface not present, skipping"; return; }
+    ip link show wg0 >/dev/null 2>&1 || { say "wireguard: interface not present, skipping"; return 1; }
     # The peer address of a locally set-up wg0/wg1 loopback tunnel pair;
     # override for a different tunnel layout.
     local peer=${AUTOFDO_WG_PEER:-10.99.0.2}
@@ -389,7 +410,7 @@ phase_wireguard() {
 
 phase_ci_build() {
     say "ci: git clone + docker build"
-    run "git" && run "docker" || return 0
+    run "git" && run "docker" || return 1
     tmp=$(mktemp -d)
     timeout 30 git clone --quiet --depth 1 \
         https://github.com/fabianwimberger/linux-cachyos-deb.git "$tmp/repo" >/dev/null 2>&1 \
@@ -408,6 +429,8 @@ EOF
 
 phase_document() {
     say "document: pandoc convert + tesseract OCR"
+    run "pandoc" || { run "convert" && run "tesseract"; } || return 1
+
     tmp=$(mktemp -d)
     for i in 1 2 3 4 5; do
         if run "pandoc"; then
@@ -428,7 +451,7 @@ phase_document() {
 
 phase_media_index() {
     say "media: synthetic photo-library indexing"
-    run "ffmpeg" && run "convert" || return 0
+    run "ffmpeg" && run "convert" || return 1
     tmp=$(mktemp -d)
     timeout 60 ffmpeg -hide_banner -f lavfi -i "mandelbrot=size=1600x1200:rate=2" \
         -frames:v 60 "$tmp/img-%03d.jpg" >/dev/null 2>&1 || true
@@ -442,7 +465,7 @@ phase_media_index() {
 
 phase_desktop() {
     say "desktop: windowed GL/Vulkan render + compositor churn"
-    desktop_ready || { say "desktop: no live graphical session, skipping"; return; }
+    desktop_ready || { say "desktop: no live graphical session, skipping"; return 1; }
 
     if run "glxgears"; then
         timeout 60 glxgears >/dev/null 2>&1 || true
@@ -471,7 +494,7 @@ phase_desktop() {
 
 phase_video() {
     say "video: mpv hw-decoded local clip playback"
-    desktop_ready || { say "video: no live graphical session, skipping"; return; }
+    desktop_ready || { say "video: no live graphical session, skipping"; return 1; }
     if run "mpv" && run "ffmpeg"; then
         src=/tmp/prf-video-src.mp4
         timeout 40 ffmpeg -hide_banner -f lavfi -i testsrc2=size=1920x1080:rate=30:duration=45 \
@@ -490,9 +513,9 @@ phase_video() {
 
 phase_browser() {
     say "browser: selenium multi-site load"
-    desktop_ready || { say "browser: no live graphical session, skipping"; return; }
-    "$SELENIUM_PY" -c 'import selenium' >/dev/null 2>&1 || { say "browser: no selenium interpreter, skipping"; return; }
-    run "firefox" || return 0
+    desktop_ready || { say "browser: no live graphical session, skipping"; return 1; }
+    "$SELENIUM_PY" -c 'import selenium' >/dev/null 2>&1 || { say "browser: no selenium interpreter, skipping"; return 1; }
+    run "firefox" || return 1
 
     # A spread of real, stable, bot-tolerant sites: text-heavy, code, WebGL,
     # a live video stream, and a real speedtest, so the profile picks up
@@ -560,30 +583,100 @@ phase_network() {
     fi
 }
 
+# Ran/skipped tracking: phases return 0 when any workload ran, 1 on skip.
+# The final summary names what the profile actually contains — and what it
+# does not, since each phase silently (by design) no-ops without its tools.
+declare -A PHASE_RAN
+PHASES=(
+    cpu memory memory_pressure storage storage_multifs storage_nvme_readonly
+    gpu_vaapi gpu_rocm audio db mqtt proxy_tls dns wireguard
+    ci_build document media_index desktop video browser network
+)
+
+ph() {
+    local name=$1
+    shift
+    if "$@"; then
+        PHASE_RAN[$name]=1
+        return 0
+    fi
+    return 1
+}
+
+phase_summary() {
+    say "phase summary:"
+    local name
+    for name in "${PHASES[@]}"; do
+        if [ -n "${PHASE_RAN[$name]:-}" ]; then
+            echo "    ok   $name"
+        else
+            echo "    skip $name"
+        fi
+    done
+}
+
+# STRICT=1 fails fast when core training tools are absent — otherwise the run
+# records hours of idle-ish load and still passes lint-level gates elsewhere.
+STRICT=${STRICT:-0}
+strict_check() {
+    local tools=(cc openssl sysbench fio python3 ffmpeg iperf3 dig git docker
+                 mosquitto_pub mosquitto_sub pandoc tesseract convert
+                 redis-benchmark) t missing=()
+    for t in "${tools[@]}"; do
+        run "$t" || missing+=("$t")
+    done
+    if desktop_ready; then
+        for t in glxgears vkcube vkmark wmctrl xdotool mpv firefox; do
+            run "$t" || missing+=("$t")
+        done
+    fi
+    [ "${#missing[@]}" -eq 0 ] || { say "strict: missing tools: ${missing[*]}"; exit 1; }
+    say "strict: all core training tools present"
+}
+
 setup_containers
 trap teardown_containers EXIT
 
+[ "$STRICT" = 1 ] && strict_check
+
+lap=0
 while [ "$(date +%s)" -lt "$END" ]; do
-    phase_cpu
-    phase_memory
-    phase_memory_pressure
-    phase_storage
-    phase_storage_multifs
-    phase_storage_nvme_readonly
-    phase_gpu_vaapi
-    phase_gpu_rocm
-    phase_audio
-    phase_db
-    phase_mqtt
-    phase_proxy_tls
-    phase_dns
-    phase_wireguard
-    phase_ci_build
-    phase_document
-    phase_media_index
-    phase_desktop
-    phase_video
-    phase_browser
-    phase_network
+    lap=$((lap + 1))
+    ph cpu phase_cpu
+    ph memory phase_memory
+    # Memory-pressure runs only on alternate laps: a single-lap-back-to-back
+    # run skips the zswap/reclaim churn that otherwise crowds the steady-state
+    # mix out of sample weight.
+    if (( lap % 2 == 0 )); then
+        ph memory_pressure phase_memory_pressure
+    fi
+    ph storage phase_storage
+    ph storage_multifs phase_storage_multifs
+    ph storage_nvme_readonly phase_storage_nvme_readonly
+    # Run the long network phase concurrently with GPU work so the profile
+    # picks up softirq/IRQ paths overlapping a DRM submission, not only
+    # strictly serial driver activity.
+    if run "iperf3"; then
+        phase_network &
+        netpid=$!
+        ph gpu_vaapi phase_gpu_vaapi
+        if wait "$netpid"; then PHASE_RAN[network]=1; fi
+    else
+        ph gpu_vaapi phase_gpu_vaapi
+    fi
+    ph gpu_rocm phase_gpu_rocm
+    ph audio phase_audio
+    ph db phase_db
+    ph mqtt phase_mqtt
+    ph proxy_tls phase_proxy_tls
+    ph dns phase_dns
+    ph wireguard phase_wireguard
+    ph ci_build phase_ci_build
+    ph document phase_document
+    ph media_index phase_media_index
+    ph desktop phase_desktop
+    ph video phase_video
+    ph browser phase_browser
 done
+phase_summary
 say "load complete"
