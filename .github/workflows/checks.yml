@@ -21,7 +21,7 @@ jobs:
     runs-on: ubuntu-26.04
     # Source fetch + per-flavor config generation only, no compile. The real
     # build runs on release tags (release.yml).
-    timeout-minutes: 10
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
