@@ -17,6 +17,18 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: shellcheck
+        run: |
+          curl -sSL "https://github.com/koalaman/shellcheck/releases/download/v0.11.0/shellcheck-v0.11.0.linux.x86_64.tar.xz" | tar -xJf -
+          sudo cp shellcheck-v0.11.0/shellcheck /usr/local/bin/
+          shellcheck -S warning -s bash scripts/*.sh
+
   config:
     runs-on: ubuntu-26.04
     # Source fetch + per-flavor config generation only, no compile. The real
