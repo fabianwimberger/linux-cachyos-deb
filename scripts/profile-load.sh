@@ -67,7 +67,8 @@ SELENIUM_PY=${AUTOFDO_SELENIUM_PY:-}
 # Below phases need a live compositor to reach the display stack at all;
 # without one (headless, or nobody logged in) they no-op rather than fail.
 desktop_ready() {
-    local rt="/run/user/$(id -u)" xauth
+    local rt xauth
+    rt="/run/user/$(id -u)"
     [ -S "$rt/wayland-0" ] || return 1
     export XDG_RUNTIME_DIR="$rt" WAYLAND_DISPLAY=wayland-0 DISPLAY=:0 MOZ_ENABLE_WAYLAND=1
     # X11(via Xwayland) clients need the cookie Mutter generated for this
