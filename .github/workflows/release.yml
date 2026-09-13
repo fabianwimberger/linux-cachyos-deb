@@ -19,6 +19,9 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      - name: pin the build timestamp for reproducibility
+        run: echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+
       - name: free disk space
         run: |
           sudo rm -rf /opt/hostedtoolcache /usr/local/lib/android \

@@ -1,6 +1,6 @@
 # shellcheck shell=bash
-set -euo pipefail
 # shellcheck disable=SC2034  # consumers of this library use these
+set -euo pipefail
 
 ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
 cd "$ROOT"

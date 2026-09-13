@@ -118,13 +118,22 @@ make everything
 
 | Variable | Default | Description |
 |---|---|---|
-| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.2-1` | upstream release to build; hash pinned |
+| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.4-1` | upstream release to build; hash pinned |
 | `FLAVORS` | `x64v4 x64v3 znver4` | flavors built by `make everything` |
-| `PKGREL` | `4` | Debian revision; bump when only the config changes |
+| `PKGREL` | `1` | Debian revision; bump when only the config changes |
 | `LLVM_VERSION` | `distro` | `distro` = Ubuntu's clang, a number = apt.llvm.org release |
 | `UBUNTU_SERIES` | `26.04` | Ubuntu the container/packages target |
 | `MAINTAINER` | `linux-cachyos-deb <noreply@users.noreply.github.com>` | package Maintainer field |
 
+**AutoFDO:** release builds can fetch a pre-trained AutoFDO profile from the private companion repo [`linux-cachyos-deb-profiles`](https://github.com/fabianwimberger/linux-cachyos-deb-profiles) using the `AUTOFDO_DEPLOY_KEY` secret. Without that secret (for example on a fork) the build simply skips the profile.
+
 ## License
 
 GPL-2.0. The packages derive from the Linux kernel, so the repo carries the kernel's license. Not affiliated with CachyOS or Canonical.
+
+### Attribution
+
+The build redistributes upstream CachyOS work under GPL-2.0:
+
+- Kernel source and the `cachy`/`cachy-extras` config fragments — [CachyOS/linux](https://github.com/CachyOS/linux)
+- `patches/0001-dkms-clang.patch` — Eric Naim <dnaim@cachyos.org>
