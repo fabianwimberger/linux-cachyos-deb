@@ -25,8 +25,8 @@ profile:    ; @bash scripts/profile.sh $(HOST) $(SECS) $(SEG)
 # MIN=<percent> — how much of the profile must still match the kernel
 profile-report: ; @bash scripts/profile-report.sh $(MIN)
 # Full one-shot on a new release: load -> record -> gate -> upload to CI repo.
-# HOST=<ssh-host> SECS=<total>
-profile-release: ; @bash scripts/profile-release.sh $(HOST) $(SECS)
+# HOST=<ssh-host> SECS=<total, default 3600> SEG=<per-segment>
+profile-release: ; @bash scripts/profile-release.sh $(HOST) $(SECS) $(SEG)
 # HOST=<ssh-host> LABEL=<name, default uname -r> -> profiles/bench-<LABEL>.txt
 bench:      ; @bash scripts/bench.sh $(HOST) $(LABEL)
 

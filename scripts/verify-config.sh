@@ -28,6 +28,9 @@ say "verifying work/$FLAVOR/.config"
 want CACHY y
 want SCHED_CLASS_EXT y
 want LTO_CLANG_THIN y
+# Without it a passed profile is ignored, and a kernel built from this config
+# cannot be profiled (scripts/profile.sh refuses it).
+want AUTOFDO_CLANG y
 want CC_OPTIMIZE_FOR_PERFORMANCE_O3 y
 want HZ 1000
 want PREEMPT y
