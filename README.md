@@ -118,14 +118,26 @@ make everything
 
 | Variable | Default | Description |
 |---|---|---|
-| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.4-1` | upstream release to build; hash pinned |
+| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.7-1` | upstream release to build; hash pinned |
 | `FLAVORS` | `x64v4 x64v3 znver4` | flavors built by `make everything` |
 | `PKGREL` | `1` | Debian revision; bump when only the config changes |
 | `LLVM_VERSION` | `distro` | `distro` = Ubuntu's clang, a number = apt.llvm.org release |
 | `UBUNTU_SERIES` | `26.04` | Ubuntu the container/packages target |
 | `MAINTAINER` | `linux-cachyos-deb <noreply@users.noreply.github.com>` | package Maintainer field |
+| `AUTOFDO_PROFILE` | `profiles/vmlinux.afdo` | profile applied when present; absent = instrumented build |
+| `AUTOFDO_PROFILE_SHA256` | pinned | profile release builds apply; `AUTOFDO_PROFILE_SHA256_<flavor>` overrides per flavor |
+| `AUTOFDO_PROFILES_REPO` | this project's profiles repo | GitHub repo the profile is uploaded to and CI fetches from |
+| `REPO_SIGN_KEY` | repo key fingerprint | gpg key `make sign` uses |
 
-**AutoFDO:** release builds can fetch a pre-trained AutoFDO profile from the private companion repo [`linux-cachyos-deb-profiles`](https://github.com/fabianwimberger/linux-cachyos-deb-profiles) using the `AUTOFDO_DEPLOY_KEY` secret. Without that secret (for example on a fork) the build simply skips the profile.
+**AutoFDO:** release builds apply the pinned AutoFDO profile from the private profiles repo named in `AUTOFDO_PROFILES_REPO`, using the `AUTOFDO_DEPLOY_KEY` secret, and report in the job summary how much of it still matches the kernel. Without that secret (for example on a fork) the build simply skips the profile.
+
+To refresh the profile, set up an AMD Zen 3+ machine as described in [docs/PROFILING.md](docs/PROFILING.md), install the flavor's kernel from `work/<flavor>` on it, and run:
+
+```bash
+make profile-release HOST=<ssh-host> SECS=3600
+```
+
+That runs a mixed kernel-heavy load on the host, records it, and stops if core load phases are missing, too few samples were recorded, or the hot functions drifted from the shipped profile. The run then prints each phase's share of the samples, uploads the profile, and prints the `AUTOFDO_PROFILE_SHA256` to pin.
 
 ## License
 
