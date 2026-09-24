@@ -8,13 +8,28 @@ permissions:
   contents: write
 
 jobs:
+  flavors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v7
+      # kernel.env is the one list of flavors; the matrix follows it.
+      - id: list
+        run: |
+          . ./kernel.env
+          # shellcheck disable=SC2086  # FLAVORS is a space-separated list
+          echo "list=$(printf '%s\n' $FLAVORS | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
   kernel:
+    needs: flavors
     runs-on: ubuntu-26.04
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        flavor: [x64v4, x64v3, znver4]
+        flavor: ${{ fromJSON(needs.flavors.outputs.list) }}
 
     steps:
       - uses: actions/checkout@v7
@@ -99,6 +114,10 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
+      # checkout leaves an annotated tag lightweight; fetch the tag object so
+      # its message can become the release notes.
+      - run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+
       - uses: actions/download-artifact@v8
         with:
           pattern: debs-*
@@ -129,8 +148,18 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
+        # An annotated tag carries the release: its subject is the title, its
+        # body the notes. A lightweight tag falls back to generated notes.
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            repo/*
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ]; then
+            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.md
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")" \
+              --notes-file notes.md \
+              repo/*
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              repo/*
+          fi
