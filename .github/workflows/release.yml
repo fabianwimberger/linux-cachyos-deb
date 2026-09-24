@@ -8,13 +8,28 @@ permissions:
   contents: write
 
 jobs:
+  flavors:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      list: ${{ steps.list.outputs.list }}
+    steps:
+      - uses: actions/checkout@v7
+      # kernel.env is the one list of flavors; the matrix follows it.
+      - id: list
+        run: |
+          . ./kernel.env
+          # shellcheck disable=SC2086  # FLAVORS is a space-separated list
+          echo "list=$(printf '%s\n' $FLAVORS | jq -Rsc 'split("\n") | map(select(length > 0))')" >> "$GITHUB_OUTPUT"
+
   kernel:
+    needs: flavors
     runs-on: ubuntu-26.04
     timeout-minutes: 350
     strategy:
       fail-fast: false
       matrix:
-        flavor: [x64v4, x64v3, znver4]
+        flavor: ${{ fromJSON(needs.flavors.outputs.list) }}
 
     steps:
       - uses: actions/checkout@v7
@@ -37,23 +52,53 @@ jobs:
       - name: fetch autofdo profile
         env:
           PROFILE_DEPLOY_KEY: ${{ secrets.AUTOFDO_DEPLOY_KEY }}
+          FLAVOR: ${{ matrix.flavor }}
         run: |
           if [ -z "$PROFILE_DEPLOY_KEY" ]; then
             echo 'no AUTOFDO_DEPLOY_KEY secret — building without a profile'
+            echo "AutoFDO: none (no AUTOFDO_DEPLOY_KEY secret)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          . ./kernel.env
+          pin_var="AUTOFDO_PROFILE_SHA256_$FLAVOR"
+          pin=${!pin_var:-${AUTOFDO_PROFILE_SHA256:-}}
+          [ -n "$pin" ] || { echo "::error::kernel.env pins no AUTOFDO_PROFILE_SHA256"; exit 1; }
+
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           echo "$PROFILE_DEPLOY_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           GIT_SSH_COMMAND='ssh -i ~/.ssh/id_deploy' \
-            git clone --depth 1 git@github.com:fabianwimberger/linux-cachyos-deb-profiles.git /tmp/profiles
+            git clone --depth 1 "git@github.com:$AUTOFDO_PROFILES_REPO.git" /tmp/profiles
+
+          # Profiles uploaded before the content-addressed afdo/ layout exist
+          # only as vmlinux.afdo; the hash check below decides either way.
+          if [ -f "/tmp/profiles/afdo/$pin.afdo" ]; then
+            src=/tmp/profiles/afdo/$pin.afdo meta=/tmp/profiles/afdo/$pin.meta
+          else
+            src=/tmp/profiles/vmlinux.afdo meta=/tmp/profiles/vmlinux.afdo.meta
+          fi
+          echo "$pin  $src" | sha256sum -c --quiet \
+            || { echo "::error::pinned profile $pin is not in the profiles repo"; exit 1; }
           mkdir -p profiles
-          cp /tmp/profiles/vmlinux.afdo profiles/
+          cp "$src" profiles/vmlinux.afdo
+          [ -f "$meta" ] && cp "$meta" profiles/vmlinux.afdo.meta
+          echo "AutoFDO: profile \`${pin:0:12}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - run: make config FLAVOR=${{ matrix.flavor }}
       - run: make build FLAVOR=${{ matrix.flavor }}
       - run: make package FLAVOR=${{ matrix.flavor }}
+
+      # How much of the profile still lands on this kernel. A stale profile
+      # still helps and never breaks the build, so this warns, not fails.
+      - name: autofdo profile fit
+        if: hashFiles('profiles/vmlinux.afdo') != ''
+        run: |
+          set -o pipefail
+          if ! make profile-report FLAVOR=${{ matrix.flavor }} MIN=80 2>&1 | tee report.txt; then
+            echo "::warning::AutoFDO profile fit for ${{ matrix.flavor }} is below its gates — re-profile this release"
+          fi
+          { echo '```'; cat report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
@@ -68,6 +113,10 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
+
+      # checkout leaves an annotated tag lightweight; fetch the tag object so
+      # its message can become the release notes.
+      - run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
 
       - uses: actions/download-artifact@v8
         with:
@@ -99,8 +148,18 @@ jobs:
       - name: publish
         env:
           GH_TOKEN: ${{ github.token }}
+        # An annotated tag carries the release: its subject is the title, its
+        # body the notes. A lightweight tag falls back to generated notes.
         run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "$GITHUB_REF_NAME" \
-            --generate-notes \
-            repo/*
+          if [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ]; then
+            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.md
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")" \
+              --notes-file notes.md \
+              repo/*
+          else
+            gh release create "$GITHUB_REF_NAME" \
+              --title "$GITHUB_REF_NAME" \
+              --generate-notes \
+              repo/*
+          fi

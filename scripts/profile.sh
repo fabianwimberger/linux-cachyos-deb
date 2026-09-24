@@ -14,6 +14,10 @@
 # — an hour can run to tens of GB — and segmenting bounds that to one segment at
 # a time. Merging is the documented way to combine profiles, so a long run
 # spanning several different workloads is preferable to one narrow one.
+#
+# AUTOFDO_LOAD_PIDFILE (set by scripts/profile-release.sh) names a pidfile on
+# the target; the recording fails if that process is gone at a segment
+# boundary, rather than quietly profiling an idle kernel.
 . "$(dirname "$0")/lib.sh"
 require_flavor
 
@@ -32,26 +36,32 @@ VMLINUX="$OBJDIR/vmlinux"
 # llvm-profgen need not match the compiler version, only be LLVM 19 or newer.
 IMAGE=${IMAGE:-linux-cachyos-deb:$UBUNTU_SERIES}
 docker image inspect "$IMAGE" >/dev/null 2>&1 || die "image $IMAGE missing — run: make image"
+indocker() { docker run --rm -v "$ROOT:/work" -w /work --user "$(id -u):$(id -g)" "$IMAGE" "$@"; }
 
 # AMD PMCx0C4, Retired Taken Branch Instructions, kernel side only. The kernel
 # documentation names this RETIRED_TAKEN_BRANCH_INSTRUCTIONS and reaches it via
 # --pfm-events, which Ubuntu's perf is not built with; the raw encoding needs no
 # libpfm4. Intel's equivalent is BR_INST_RETIRED.NEAR_TAKEN, r20c4.
 EVENT=${AUTOFDO_EVENT:-r0c4}
-# One sample per this many taken branches. Lower is more detail and a much
-# larger perf.data; the per-segment size is reported below so it can be tuned.
-PERIOD=${AUTOFDO_PERIOD:-1000000}
+# One sample per this many taken branches. Prime, so the sampling interval
+# cannot lock step with a loop whose trip count divides a round number and
+# keep landing on the same branch. Lower is more detail and a much larger
+# perf.data.
+PERIOD=${AUTOFDO_PERIOD:-1000003}
+# llvm-profgen holds the whole vmlinux plus one segment's trace; a few GB each.
+CONVERT_JOBS=${AUTOFDO_CONVERT_JOBS:-2}
 
 # /var/tmp, not /tmp: /tmp is tmpfs on at least one target, and writing the
 # recording into RAM competes with the workload being profiled.
-# The host driving this may be on wifi, and a run spans an hour of transfers,
-# so a momentary drop must not end the run. Host-key checking is off, and the
-# real known_hosts is never touched: this target's key legitimately changes
-# whenever its kernel or OS gets reinstalled, which is routine for this kind
-# of target.
+# The host driving this may be on wifi, and a run spans an hour, so a momentary
+# drop must not end the run: the recorder runs detached on the target and this
+# side only polls it. Host-key checking is off, and the real known_hosts is
+# never touched: this target's key legitimately changes whenever its kernel or
+# OS gets reinstalled, which is routine for this kind of target.
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=15 -o ConnectionAttempts=5
           -o ServerAliveInterval=15 -o ServerAliveCountMax=6
-          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null)
+          -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o LogLevel=ERROR)
+RUNDIR=/var/tmp/autofdo-run
 
 retry() {
     local n=0
@@ -64,6 +74,7 @@ retry() {
 }
 
 run() { if [ "$TARGET" = local ]; then bash -c "$1"; else ssh "${SSH_OPTS[@]}" "$TARGET" "$1"; fi; }
+put() { if [ "$TARGET" = local ]; then cp "$1" "$2"; else retry scp "${SSH_OPTS[@]}" -q "$1" "$TARGET:$2"; fi; }
 fetch() {
     if [ "$TARGET" = local ]; then mv "$1" "$2"
     else retry scp "${SSH_OPTS[@]}" -q "$TARGET:$1" "$2" && run "rm -f $1"; fi
@@ -72,6 +83,7 @@ fetch() {
 say "checking $TARGET"
 run 'grep -qE "amd_lbr_v2| brs " /proc/cpuinfo || { echo "no AMD LBR/BRS: AutoFDO needs Zen 3 with BRS or Zen 4+ with amd_lbr_v2" >&2; exit 1; }
      command -v perf >/dev/null || { echo "perf not installed (apt install linux-tools-generic)" >&2; exit 1; }
+     command -v zstd >/dev/null || { echo "zstd not installed" >&2; exit 1; }
      [ "$(sysctl -n kernel.perf_event_paranoid)" -le 0 ] || { echo "kernel.perf_event_paranoid must be <= 0; run: sudo sysctl -w kernel.perf_event_paranoid=-1" >&2; exit 1; }
      # With kptr_restrict set, /proc/kallsyms reads back as zeroes for a
      # non-root user, so perf cannot record the relocation reference symbol.
@@ -79,70 +91,137 @@ run 'grep -qE "amd_lbr_v2| brs " /proc/cpuinfo || { echo "no AMD LBR/BRS: AutoFD
      # vmlinux, and the profile is silently worthless rather than wrong in any
      # visible way — perf only warns. Refuse instead.
      [ "$(sysctl -n kernel.kptr_restrict)" -eq 0 ] || { echo "kernel.kptr_restrict must be 0 so perf can record the KASLR relocation symbol; run: sudo sysctl -w kernel.kptr_restrict=0" >&2; exit 1; }
+     # io_uring rings are charged against RLIMIT_MEMLOCK; at the 8 MB default
+     # fio'"'"'s io_uring jobs fail with ENOMEM and the load skips them silently.
+     [ "$(ulimit -l)" = unlimited ] || { echo "memlock limit is $(ulimit -l) KB; io_uring jobs would fail — see docs/PROFILING.md, base setup" >&2; exit 1; }
      grep -qE "^0+ " /proc/kallsyms && { echo "/proc/kallsyms reads as zeroes; kernel addresses are hidden and the profile cannot be mapped to vmlinux" >&2; exit 1; }
      true' \
     || die "target is not ready to profile"
 
-running=$(retry run 'uname -r')
-[ "$running" = "$KRELEASE" ] \
-    || die "target runs $running but this is $FLAVOR ($KRELEASE) — profile and vmlinux must match"
-
 grep -q '^CONFIG_AUTOFDO_CLANG=y' "$OBJDIR/.config" \
     || die "work/$FLAVOR/.config lacks CONFIG_AUTOFDO_CLANG=y — a profile from an uninstrumented kernel is not usable"
 
-mkdir -p "$ROOT/profiles/parts"
-rm -f "$ROOT/profiles/parts"/*.afdo
+# The release string only says which flavor and version runs there, not which
+# build: rebuilding work/$FLAVOR after installing it on the target keeps the
+# name and changes every address. The build ID is what must match.
+running=$(retry run 'uname -r')
+[ "$running" = "$KRELEASE" ] \
+    || die "target runs $running but this is $FLAVOR ($KRELEASE) — profile and vmlinux must match"
+local_id=$(indocker llvm-readelf -n "/work/work/$FLAVOR/vmlinux" | awk '/Build ID:/ {print $3; exit}')
+# The GNU build-ID note, read directly: perf buildid-list -k prints nothing on
+# kernels whose notes start with Xen entries, as ours do.
+remote_id=$(run 'python3 -c "
+import struct
+d = open(\"/sys/kernel/notes\", \"rb\").read(); o = 0
+while o + 12 <= len(d):
+    n, s, t = struct.unpack_from(\"<III\", d, o); o += 12
+    name = d[o:o + n]; o += (n + 3) & ~3
+    if name == b\"GNU\\0\" and t == 3: print(d[o:o + s].hex())
+    o += (s + 3) & ~3
+"') || die "could not read the build ID on $TARGET"
+[ -n "$local_id" ] || die "work/$FLAVOR/vmlinux has no build ID"
+[ "$local_id" = "$remote_id" ] \
+    || die "target kernel build ID ${remote_id:-<none>} is not work/$FLAVOR/vmlinux ($local_id) — install the kernel from work/$FLAVOR on the target"
+say "build ID matches: $local_id"
 
 segments=$(( (TOTAL + SEGMENT - 1) / SEGMENT ))
 say "recording ${TOTAL}s on $TARGET in $segments segment(s) of ${SEGMENT}s (event $EVENT, period $PERIOD)"
-say "put real load on that machine — an idle recording profiles an idle kernel"
+[ -n "${AUTOFDO_LOAD_PIDFILE:-}" ] \
+    || say "put real load on that machine — an idle recording profiles an idle kernel"
 
-# Everything stays on the target until the run is over, then transfers once.
-# Segmenting is only to bound perf.data: each segment is decoded and compressed
-# on the spot and the raw recording dropped. Nothing crosses the network while
-# recording, so a flaky link cannot cost a segment mid-run.
-run "rm -rf /var/tmp/autofdo-run && mkdir -p /var/tmp/autofdo-run" || die "could not prepare target"
+run "rm -rf $RUNDIR && mkdir -p $RUNDIR" || die "could not prepare target"
+put "$ROOT/scripts/profile-record.sh" /var/tmp/profile-record.sh || die "could not copy the recorder to $TARGET"
 
-for i in $(seq 1 "$segments"); do
-    say "segment $i/$segments: recording ${SEGMENT}s"
-    run "perf record -e ${EVENT}:k -a -N -b -c $PERIOD -o /var/tmp/autofdo.perf -- sleep $SEGMENT \
-         && perf script -i /var/tmp/autofdo.perf --show-mmap-events -F ip,brstack 2>/dev/null \
-            | zstd -3 -q -o /var/tmp/autofdo-run/$i.script.zst -f \
-         && rm -f /var/tmp/autofdo.perf" \
-        || die "recording failed on segment $i"
+# The recorder leads its own session, so its pid is its process group and one
+# kill takes perf down with it if this side is interrupted.
+finished=
+stop_recorder() {
+    [ -n "$finished" ] && return
+    say "stopping the recorder on $TARGET"
+    run "p=\$(cat $RUNDIR/record.pid 2>/dev/null) && kill -TERM -- -\$p 2>/dev/null; true" || true
+}
+trap stop_recorder EXIT
+
+run "setsid nohup bash /var/tmp/profile-record.sh $RUNDIR $segments $SEGMENT $EVENT $PERIOD ${AUTOFDO_LOAD_PIDFILE:-} \
+     < /dev/null > /var/tmp/profile-record.log 2>&1 &" \
+    || die "could not start the recorder on $TARGET"
+
+# Each segment also spends a while in perf script after recording; allow for it
+# generously before giving up on a recorder that stopped reporting.
+deadline=$(( $(date +%s) + segments * (SEGMENT + 900) + 300 ))
+last=
+while :; do
+    sleep 30
+    state=$(retry run "cat $RUNDIR/status 2>/dev/null; cat $RUNDIR/progress 2>/dev/null; \
+                       p=\$(cat $RUNDIR/record.pid 2>/dev/null) && kill -0 \$p 2>/dev/null && echo alive || echo gone") \
+        || die "lost contact with $TARGET"
+    status=$(sed -n 1p <<<"$state")
+    progress=$(sed -n 2p <<<"$state")
+    case "$status" in
+        done) break ;;
+        failed*) die "recorder on $TARGET: ${status#failed: } (see /var/tmp/profile-record.log there)" ;;
+    esac
+    [ "$(tail -1 <<<"$state")" = alive ] || die "recorder on $TARGET died without reporting (see /var/tmp/profile-record.log there)"
+    [ "$progress" != "$last" ] && say "$progress" && last=$progress
+    [ "$(date +%s)" -lt "$deadline" ] || die "recording overran its deadline"
 done
+finished=1
 
 say "recording complete, transferring"
-run "cd /var/tmp/autofdo-run && tar -cf /var/tmp/autofdo-run.tar ." || die "could not pack traces"
+run "cd $RUNDIR && rm -f status progress record.pid && tar -cf /var/tmp/autofdo-run.tar ." || die "could not pack traces"
 fetch /var/tmp/autofdo-run.tar "$ROOT/profiles/autofdo-run.tar" || die "could not fetch traces"
-run "rm -rf /var/tmp/autofdo-run"
+run "rm -rf $RUNDIR /var/tmp/profile-record.sh"
 say "transferred $(du -h "$ROOT/profiles/autofdo-run.tar" | cut -f1)"
 
-rm -rf "$ROOT/profiles/traces"
-mkdir -p "$ROOT/profiles/traces"
+rm -rf "$ROOT/profiles/traces" "$ROOT/profiles/parts"
+mkdir -p "$ROOT/profiles/traces" "$ROOT/profiles/parts"
 tar -xf "$ROOT/profiles/autofdo-run.tar" -C "$ROOT/profiles/traces"
 rm -f "$ROOT/profiles/autofdo-run.tar"
 
+# perf reports dropped samples on stderr and nowhere else.
+if lost=$(grep -il 'lost' "$ROOT/profiles/traces"/*.log 2>/dev/null); then
+    say "warning: perf reported lost samples in: $(xargs -n1 basename <<<"$lost" | tr '\n' ' ')"
+    grep -ih 'lost' "$ROOT/profiles/traces"/*.log | sort | uniq -c | head -5 || true
+fi
+
 for i in $(seq 1 "$segments"); do
-    z="$ROOT/profiles/traces/$i.script.zst"
-    [ -s "$z" ] || die "segment $i missing from the transferred traces"
-    zstd -d -q -f "$z" -o "$ROOT/profiles/traces/$i.script" || die "could not decompress segment $i"
-    say "converting segment $i/$segments"
-    docker run --rm -v "$ROOT:/work" -w /work --user "$(id -u):$(id -g)" "$IMAGE" \
-        llvm-profgen --kernel \
-            --binary="/work/work/$FLAVOR/vmlinux" \
-            --perfscript="/work/profiles/traces/$i.script" \
-            -o "/work/profiles/parts/$i.afdo" \
-        || die "llvm-profgen failed on segment $i"
-    [ -s "$ROOT/profiles/parts/$i.afdo" ] || die "segment $i produced an empty profile"
-    rm -f "$ROOT/profiles/traces/$i.script"
+    [ -s "$ROOT/profiles/traces/$i.script.zst" ] || die "segment $i missing from the transferred traces"
 done
+# Monotonic second -> samples, joined against the load's phase markers by
+# scripts/profile-release.sh.
+cat "$ROOT/profiles/traces"/*.hist | sort -n > "$ROOT/profiles/samples.hist" \
+    || die "segment sample histograms missing from the transferred traces"
+
+say "converting $segments segment(s), $CONVERT_JOBS at a time"
+seq 1 "$segments" | xargs -P "$CONVERT_JOBS" -I{} \
+    docker run --rm -v "$ROOT:/work" -w /work --user "$(id -u):$(id -g)" "$IMAGE" bash -c '
+        set -euo pipefail
+        zstd -d -q -f "profiles/traces/{}.script.zst" -o "profiles/traces/{}.script"
+        llvm-profgen --kernel --binary="work/$0/vmlinux" \
+            --perfscript="profiles/traces/{}.script" -o "profiles/parts/{}.afdo"
+        rm -f "profiles/traces/{}.script"
+        [ -s "profiles/parts/{}.afdo" ]' "$FLAVOR" \
+    || die "llvm-profgen failed on at least one segment"
 rm -rf "$ROOT/profiles/traces"
 
 say "merging $segments profile(s)"
-docker run --rm -v "$ROOT:/work" -w /work --user "$(id -u):$(id -g)" "$IMAGE" \
-    bash -c "llvm-profdata merge --sample -o '/work/$AUTOFDO_PROFILE' /work/profiles/parts/*.afdo" \
+indocker bash -c "llvm-profdata merge --sample -o '/work/$AUTOFDO_PROFILE' /work/profiles/parts/*.afdo" \
     || die "llvm-profdata merge failed"
+rm -rf "$ROOT/profiles/parts"
+
+# Provenance travels with the profile into the profiles repo, so a later build
+# can tell what it is applying. profile-report.sh adds SAMPLES and FUNCTIONS.
+{
+    echo "CACHY_TAG=$CACHY_TAG"
+    echo "KRELEASE=$KRELEASE"
+    echo "FLAVOR=$FLAVOR"
+    echo "BUILD_ID=$local_id"
+    echo "RECORDED_SECONDS=$((segments * SEGMENT))"
+    echo "EVENT=$EVENT"
+    echo "PERIOD=$PERIOD"
+    echo "LLVM=\"$(indocker llvm-profgen --version | awk '/version/ {print $NF; exit}')\""
+    echo "DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+} > "$ROOT/$AUTOFDO_PROFILE.meta"
 
 say "wrote $AUTOFDO_PROFILE ($(du -h "$ROOT/$AUTOFDO_PROFILE" | cut -f1))"
 say "rebuild to apply it: make FLAVOR=$FLAVOR build package"
