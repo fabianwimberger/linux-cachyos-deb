@@ -37,23 +37,53 @@ jobs:
       - name: fetch autofdo profile
         env:
           PROFILE_DEPLOY_KEY: ${{ secrets.AUTOFDO_DEPLOY_KEY }}
+          FLAVOR: ${{ matrix.flavor }}
         run: |
           if [ -z "$PROFILE_DEPLOY_KEY" ]; then
             echo 'no AUTOFDO_DEPLOY_KEY secret — building without a profile'
+            echo "AutoFDO: none (no AUTOFDO_DEPLOY_KEY secret)" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
+          . ./kernel.env
+          pin_var="AUTOFDO_PROFILE_SHA256_$FLAVOR"
+          pin=${!pin_var:-${AUTOFDO_PROFILE_SHA256:-}}
+          [ -n "$pin" ] || { echo "::error::kernel.env pins no AUTOFDO_PROFILE_SHA256"; exit 1; }
+
           mkdir -p ~/.ssh
           ssh-keyscan github.com >> ~/.ssh/known_hosts
           echo "$PROFILE_DEPLOY_KEY" > ~/.ssh/id_deploy
           chmod 600 ~/.ssh/id_deploy
           GIT_SSH_COMMAND='ssh -i ~/.ssh/id_deploy' \
-            git clone --depth 1 git@github.com:fabianwimberger/linux-cachyos-deb-profiles.git /tmp/profiles
+            git clone --depth 1 "git@github.com:$AUTOFDO_PROFILES_REPO.git" /tmp/profiles
+
+          # Profiles uploaded before the content-addressed afdo/ layout exist
+          # only as vmlinux.afdo; the hash check below decides either way.
+          if [ -f "/tmp/profiles/afdo/$pin.afdo" ]; then
+            src=/tmp/profiles/afdo/$pin.afdo meta=/tmp/profiles/afdo/$pin.meta
+          else
+            src=/tmp/profiles/vmlinux.afdo meta=/tmp/profiles/vmlinux.afdo.meta
+          fi
+          echo "$pin  $src" | sha256sum -c --quiet \
+            || { echo "::error::pinned profile $pin is not in the profiles repo"; exit 1; }
           mkdir -p profiles
-          cp /tmp/profiles/vmlinux.afdo profiles/
+          cp "$src" profiles/vmlinux.afdo
+          [ -f "$meta" ] && cp "$meta" profiles/vmlinux.afdo.meta
+          echo "AutoFDO: profile \`${pin:0:12}\`" >> "$GITHUB_STEP_SUMMARY"
 
       - run: make config FLAVOR=${{ matrix.flavor }}
       - run: make build FLAVOR=${{ matrix.flavor }}
       - run: make package FLAVOR=${{ matrix.flavor }}
+
+      # How much of the profile still lands on this kernel. A stale profile
+      # still helps and never breaks the build, so this warns, not fails.
+      - name: autofdo profile fit
+        if: hashFiles('profiles/vmlinux.afdo') != ''
+        run: |
+          set -o pipefail
+          if ! make profile-report FLAVOR=${{ matrix.flavor }} MIN=80 2>&1 | tee report.txt; then
+            echo "::warning::AutoFDO profile fit for ${{ matrix.flavor }} is below its gates — re-profile this release"
+          fi
+          { echo '```'; cat report.txt; echo '```'; } >> "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
