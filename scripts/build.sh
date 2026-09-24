@@ -24,8 +24,15 @@ MAKE=(make -C "$SRCDIR" O="$OBJDIR" LLVM="$LLVM_MAKE" LLVM_IAS=1 -j"$JOBS"
 # Passing one turns on the optimisation. Absent is normal, not an error: it is
 # how the kernel that a profile gets collected from is built.
 if [ -n "${AUTOFDO_PROFILE:-}" ] && [ -f "$ROOT/$AUTOFDO_PROFILE" ]; then
-    MAKE+=(CLANG_AUTOFDO_PROFILE="$ROOT/$AUTOFDO_PROFILE")
-    say "autofdo profile: $AUTOFDO_PROFILE"
+    sha=$(sha256sum "$ROOT/$AUTOFDO_PROFILE" | cut -d' ' -f1)
+    # kbuild rebuilds an object when its command line changes, but does not
+    # track the profile's contents: with a fixed path, an incremental build
+    # after a new profile would keep every object built with the old one. A
+    # path named by content changes the command line whenever the profile does.
+    rm -f "$OBJDIR"/autofdo-*.afdo
+    cp "$ROOT/$AUTOFDO_PROFILE" "$OBJDIR/autofdo-${sha:0:16}.afdo"
+    MAKE+=(CLANG_AUTOFDO_PROFILE="$OBJDIR/autofdo-${sha:0:16}.afdo")
+    say "autofdo profile: $AUTOFDO_PROFILE (sha256 $sha)"
 else
     say "autofdo profile: none (instrumented build, no optimisation applied)"
 fi
