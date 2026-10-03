@@ -39,9 +39,17 @@ fi
 
 mkdir -p "$OUTDIR"
 say "building $KRELEASE on $JOBS threads"
+# The progress filter drops compiler errors along with everything else, so a
+# failed make has to print the end of the log itself. Only make's status
+# counts: grep exits 1 when an incremental build prints nothing it matches.
+rc=0
 "${MAKE[@]}" bindeb-pkg 2>&1 | tee "$OBJDIR/build.log" \
     | grep -E '^\s*(CC|LD|AR|BTF|LTO|GEN|DPKG|INSTALL)' \
-    | awk 'NR%500==0 {print "   ... "$0}'
+    | awk 'NR%500==0 {print "   ... "$0}' || rc=${PIPESTATUS[0]}
+if [ "$rc" != 0 ]; then
+    tail -n 100 "$OBJDIR/build.log" >&2
+    die "build failed (make exit $rc) — full log in $OBJDIR/build.log"
+fi
 
 # bindeb-pkg writes into the objtree's parent for O= builds.
 found=$(find "$ROOT/work" "$ROOT/src" -maxdepth 1 -name '*.deb' -newer "$OBJDIR/.config")
