@@ -30,7 +30,7 @@ rm -f "$SRCDIR"/localversion* "$OBJDIR"/localversion*
 
 for frag in cachy cachy-extras ubuntu-compat "$FLAVOR"; do
     say "applying config/fragments/$frag.conf"
-    while read -r line; do
+    while read -r line || [ -n "$line" ]; do
         [ -z "$line" ] && continue
         case "$line" in \#*) continue ;; esac
         # eval preserves quoting for --set-str values.

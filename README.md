@@ -128,12 +128,18 @@ make bench-compare A=profiles/bench-stock.txt B=profiles/bench-cachyos.txt
 Following a new upstream release is a `kernel.env` edit and one build per flavor:
 
 ```bash
-$EDITOR kernel.env          # new CACHY_TAG, clear CACHY_SHA256
+$EDITOR kernel.env          # new KERNEL_VERSION and CACHY_TAG, PKGREL=1, clear CACHY_SHA256
 make fetch                  # prints the hash to pin
 $EDITOR kernel.env          # paste the hash back
+bash scripts/gen-cachy-extras.sh   # refresh the upstream driver list
+git diff config/            # review it, and config/parity-review.txt
 rm -rf work/x64v3 work/x64v4 work/znver4
 make everything
 ```
+
+A release is an annotated tag on `main` — `vX.Y.Z`, or `vX.Y.Z-N` when `PKGREL`
+is above 1. Its subject becomes the release title and its body the notes; the
+release build refuses a tag that does not match `kernel.env`.
 
 ## Not this
 
@@ -147,7 +153,7 @@ make everything
 
 | Variable | Default | Description |
 |---|---|---|
-| `CACHY_TAG` / `CACHY_SHA256` | `cachyos-7.2.7-1` | upstream release to build; hash pinned |
+| `CACHY_TAG` / `CACHY_SHA256` | latest upstream release | upstream release to build; hash pinned |
 | `FLAVORS` | `x64v4 x64v3 znver4` | flavors built by `make everything` |
 | `PKGREL` | `1` | Debian revision; bump when only the config changes |
 | `LLVM_VERSION` | `distro` | `distro` = Ubuntu's clang, a number = apt.llvm.org release |

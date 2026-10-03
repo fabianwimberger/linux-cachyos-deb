@@ -7,10 +7,13 @@ check() { if eval "$2" >/dev/null 2>&1; then printf '  ok   %s\n' "$1"; else pri
 
 check "docker present"            "command -v docker"
 check "docker usable"             "docker info"
-check "builder image built"       "docker image inspect linux-cachyos-deb:$UBUNTU_SERIES"
+check "builder image built"       "docker image inspect '${IMAGE:-linux-cachyos-deb:$UBUNTU_SERIES}'"
 check "base config present"       "[ -f '$ROOT/$UBUNTU_BASE_CONFIG' ]"
 check "upstream keys present"     "[ -s '$ROOT/keys/cachyos-upstream.asc' ]"
-check "gpgv present"              "command -v gpgv"
+# What scripts/fetch.sh runs on the host, outside the container.
+for tool in curl gpg gpgv patch; do
+    check "$tool present" "command -v $tool"
+done
 
 # On btrfs, objtool writes vmlinux.o through mmap, and dirtying a COW'd or
 # compressed page that way goes through the writeback fixup worker, which

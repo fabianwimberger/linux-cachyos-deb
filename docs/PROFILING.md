@@ -261,7 +261,7 @@ Install it on the target and boot it once:
 
 ```bash
 sudo apt install ./linux-image-*.deb ./linux-headers-*.deb
-sudo grub-reboot "Advanced options for Ubuntu>Ubuntu, with Linux 7.2.7-cachyos-x64v4"
+sudo grub-reboot "Advanced options for Ubuntu>Ubuntu, with Linux <version>-cachyos-x64v4"
 sudo reboot
 ```
 
