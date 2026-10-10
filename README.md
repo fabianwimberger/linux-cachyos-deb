@@ -1,7 +1,7 @@
+# linux-cachyos-deb
+
 [![CI](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/ci.yml)
 [![License: GPL-2.0](https://img.shields.io/badge/License-GPL--2.0-blue.svg)](LICENSE)
-
-# linux-cachyos-deb
 
 CachyOS kernels, packaged for Ubuntu.
 
@@ -59,6 +59,20 @@ make everything  # all flavors from kernel.env, plus the apt repo
 ```
 
 `make config FLAVOR=x64v3`, `make build JOBS=8` etc. override the defaults.
+
+## How It Works
+
+```mermaid
+flowchart LR
+    S[CachyOS tarball<br/>GPG + SHA-256 check] --> C[Ubuntu config<br/>+ CachyOS fragments]
+    C --> B[Build<br/>clang, ThinLTO, AutoFDO]
+    B --> P[.debs + CPU guard<br/>+ metapackage]
+    P --> R[Signed flat apt repo<br/>on GitHub Releases]
+```
+
+Config, build, and packaging run in an `ubuntu:26.04` container, once per flavor
+(`x64v3`, `x64v4`, `znver4`). A tag on `main` runs the same steps in CI and
+publishes the repo as release assets, which is what `apt` reads.
 
 ## Benchmarks
 
