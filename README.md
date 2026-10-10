@@ -1,9 +1,11 @@
-[![checks](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/checks.yml/badge.svg)](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/checks.yml)
+[![CI](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/ci.yml/badge.svg)](https://github.com/fabianwimberger/linux-cachyos-deb/actions/workflows/ci.yml)
 [![License: GPL-2.0](https://img.shields.io/badge/License-GPL--2.0-blue.svg)](LICENSE)
 
 # linux-cachyos-deb
 
 CachyOS kernels, packaged for Ubuntu.
+
+## Background
 
 CachyOS ships a tuned kernel — its own patch set, ThinLTO, `-O3`, AutoFDO,
 full preemption, and x86-64-v3/v4/znver4 builds — but only for Arch. This makes
@@ -16,7 +18,16 @@ snapd, BTF, initramfs-tools and the standard module set all still work. A
 straight repackage of the Arch build wouldn't, because CachyOS's `CONFIG_LSM`
 drops AppArmor.
 
-## Install
+## Features
+
+- **Signed upstream source** — the CachyOS tarball is GPG-verified against pinned keys and a pinned SHA-256 before anything is built.
+- **Ubuntu base config** — starts from Ubuntu's own config, so the whole delta is a few greppable fragment files in `config/fragments/`.
+- **Coexists with Ubuntu's kernel** — nothing is replaced; upgrades flow through `apt` like any other package.
+- **CPU guard** — the image refuses to install on hardware below its baseline (or on non-AMD for znver4) rather than producing an unbootable system.
+
+## Quick Start
+
+### Install
 
 ```bash
 # trust the repository key
@@ -36,7 +47,7 @@ Ubuntu's kernel stays installed — pick either one in GRUB. Try the new kernel
 once with `sudo grub-reboot "<entry>" && sudo reboot`, then set it as the
 default if it behaves. Read [docs/SAFETY.md](docs/SAFETY.md) before installing.
 
-## Build it yourself
+### Build it yourself
 
 ```bash
 make image       # build container (ubuntu:26.04, clang from the archive)
@@ -48,13 +59,6 @@ make everything  # all flavors from kernel.env, plus the apt repo
 ```
 
 `make config FLAVOR=x64v3`, `make build JOBS=8` etc. override the defaults.
-
-## What you get
-
-- **Signed upstream source** — the CachyOS tarball is GPG-verified against pinned keys and a pinned SHA-256 before anything is built.
-- **Ubuntu base config** — starts from Ubuntu's own config, so the whole delta is a few greppable fragment files in `config/fragments/`.
-- **Coexists with Ubuntu's kernel** — nothing is replaced; upgrades flow through `apt` like any other package.
-- **CPU guard** — the image refuses to install on hardware below its baseline (or on non-AMD for znver4) rather than producing an unbootable system.
 
 ## Benchmarks
 
