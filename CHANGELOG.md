@@ -5,6 +5,11 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the upstream kernel release, with a `-N` suffix when only the packaging changes.
 
+## [v7.3.0] - 2026-10-21
+
+CachyOS 7.3.0, rebuilt for Ubuntu 26.04 across the x64v4, x64v3 and znver4
+flavors with a new AutoFDO profile recorded on this kernel.
+
 ## [v7.2.11] - 2026-10-15
 
 CachyOS 7.2.11, rebuilt for Ubuntu 26.04 across the x64v4, x64v3 and znver4 flavors with the pinned AutoFDO profile.
