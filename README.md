@@ -77,21 +77,21 @@ publishes the repo as release assets, which is what `apt` reads.
 ## Benchmarks
 
 Bare metal, AMD Ryzen AI 9 365 (Zen 5, 20 threads) on Ubuntu 26.04: stock
-`7.0.0-34-generic` against `7.2.7-cachyos-x64v4` from this repo, median of five
+`7.0.0-38-generic` against `7.3.0-cachyos-znver4` from this repo, median of five
 runs. Positive means the CachyOS kernel is better.
 
 | Metric | Stock | CachyOS | Δ |
 |---|---|---|---|
-| sysbench cpu (userspace control) | 44142/s | 43225/s | −2.1% |
-| sysbench threads | 98655 | 122701 | **+24%** |
-| perf bench sched messaging | 1.65 s | 1.45 s | **+12%** |
-| stress-ng pipe | 6.60 M/s | 12.46 M/s | **+89%** |
-| stress-ng context switch | 5.44 M/s | 6.90 M/s | **+27%** |
-| stress-ng futex | 2.77 M/s | 1.69 M/s | **−39%** |
-| parallel C build, 2000 files | 3.78 s | 3.60 s | +5% |
+| sysbench cpu (userspace control) | 43717/s | 43788/s | +0.2% |
+| sysbench threads | 96843 | 114870 | **+19%** |
+| perf bench sched messaging | 1.66 s | 1.33 s | **+20%** |
+| stress-ng pipe | 7.01 M/s | 16.61 M/s | **+137%** |
+| stress-ng context switch | 5.48 M/s | 5.77 M/s | +5.4% |
+| stress-ng futex | 2.81 M/s | 1.85 M/s | **−34%** |
+| parallel C build, 2000 files | 3.79 s | 3.62 s | +4.5% |
 
 Scheduler- and IPC-heavy loads gain, futex loses, and the userspace controls stay
-within 2%. The kernel is also two upstream releases ahead, so part of any
+within 2%. The kernel is also three upstream releases ahead, so part of any
 difference is upstream. All 24 rows, the rows that are not reliable on this
 CPU, the per-option analysis, and the commands to reproduce are in
 [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
