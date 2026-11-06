@@ -34,6 +34,9 @@ drops AppArmor.
 curl -fsSL https://github.com/fabianwimberger/linux-cachyos-deb/releases/latest/download/linux-cachyos-deb-archive-keyring.gpg \
   | sudo tee /usr/share/keyrings/linux-cachyos-deb.gpg > /dev/null
 
+# compare the fingerprint before trusting it: 8378 F57B 00D6 FA1F 4129  89C7 501F 5C5D F11B 0753
+gpg --show-keys /usr/share/keyrings/linux-cachyos-deb.gpg
+
 # add the flat repo
 echo "deb [signed-by=/usr/share/keyrings/linux-cachyos-deb.gpg] \
 https://github.com/fabianwimberger/linux-cachyos-deb/releases/latest/download ./" \
@@ -150,6 +153,9 @@ That runs a mixed kernel-heavy load on the host, records it, and stops if core l
 ## License
 
 GPL-2.0. The packages derive from the Linux kernel, so the repo carries the kernel's license. Not affiliated with CachyOS or Canonical.
+
+The complete corresponding source for every release — upstream tarball, patches, configs and the
+build scripts at the release tag, plus how to rebuild — is in [SOURCE-OFFER.md](SOURCE-OFFER.md).
 
 ### Attribution
 
