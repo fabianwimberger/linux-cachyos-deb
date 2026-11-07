@@ -5,6 +5,13 @@ All notable changes to this project are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 Versions follow the upstream kernel release, with a `-N` suffix when only the packaging changes.
 
+## [v7.3.3] - 2026-11-07
+
+CachyOS 7.3.3, rebuilt for Ubuntu 26.04 across the x64v4, x64v3 and znver4
+flavors with the pinned AutoFDO profile. The configuration fragments are
+unchanged; upstream dropped the Piece-Of-Cake idle selector and the applesmc
+T2 driver (macsmc replaces it), so two generated fragment lines are now inert.
+
 ## [v7.3.1] - 2026-10-30
 
 CachyOS 7.3.1, rebuilt for Ubuntu 26.04 across the x64v4, x64v3 and znver4
