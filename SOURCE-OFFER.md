@@ -11,15 +11,15 @@ Three things, all public:
 
 | Input | Where | Pinned by |
 | --- | --- | --- |
-| CachyOS Linux 7.3.1 source tarball | https://github.com/CachyOS/linux/releases/download/cachyos-7.3.1-1/cachyos-7.3.1-1.tar.gz | `CACHY_SHA256` in `kernel.env` |
-| Tarball signature | `cachyos-7.3.1-1.tar.gz.asc` next to it | `keys/cachyos-upstream.asc` |
-| This repository at tag `v7.3.1` (commit `bd5f6b0`): `patches/`, `config/`, `docker/`, `scripts/`, `profiles/` | https://github.com/fabianwimberger/linux-cachyos-deb/tree/v7.3.1 | the tag |
+| CachyOS Linux 7.3.3 source tarball | https://github.com/CachyOS/linux/releases/download/cachyos-7.3.3-1/cachyos-7.3.3-1.tar.gz | `CACHY_SHA256` in `kernel.env` |
+| Tarball signature | `cachyos-7.3.3-1.tar.gz.asc` next to it | `keys/cachyos-upstream.asc` |
+| This repository at tag `v7.3.3` (commit `6263384`): `patches/`, `config/`, `docker/`, `scripts/`, `profiles/` | https://github.com/fabianwimberger/linux-cachyos-deb/tree/v7.3.3 | the tag |
 
 The tarball plus this repository at that tag is the complete corresponding source for
-`linux-image-7.3.1-cachyos-{x64v4,x64v3,znver4}` and their headers packages.
+`linux-image-7.3.3-cachyos-{x64v4,x64v3,znver4}` and their headers packages.
 
 The tarball's SHA-256 is
-`3dba29aa8e7dcda43aee6898e4c66dfbfd997eb5d902510b0faeacc696ddfb3f`.
+`54a507176bc2b1c4c8a14f087ada08f92d473c6af28ecfc3e9adb1d5c62020ac`.
 `make fetch` downloads it, checks that hash and verifies the signature against the key
 ring in `keys/` before anything is built, so a rebuild starts from the same bytes the
 release did.
@@ -31,7 +31,7 @@ On a machine with Docker:
 ```bash
 git clone https://github.com/fabianwimberger/linux-cachyos-deb.git
 cd linux-cachyos-deb
-git checkout v7.3.1
+git checkout v7.3.3
 make image        # build container with the pinned toolchain
 make everything   # fetch, configure, build and package every flavour, then the apt index
 ```
