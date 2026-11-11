@@ -8,7 +8,7 @@ Versions follow the upstream kernel release, with a `-N` suffix when only the pa
 ## [v7.3.4] - 2026-11-11
 
 CachyOS 7.3.4, rebuilt for Ubuntu 26.04 across the x64v4, x64v3 and znver4
-flavors with the pinned AutoFDO profile.
+flavors with a new AutoFDO profile recorded on this kernel.
 
 ## [v7.3.3] - 2026-11-07
 
