@@ -15,15 +15,10 @@ jobs:
       list: ${{ steps.list.outputs.list }}
     steps:
       - uses: actions/checkout@v7
-      # The packages take their version from kernel.env, not from the tag, so
-      # a tag on the wrong commit would publish them under the wrong release.
-      - name: tag matches kernel.env
+      - name: check release source and notes
         run: |
-          . ./kernel.env
-          want="v$KERNEL_VERSION-$PKGREL"
-          [ "$PKGREL" = 1 ] && [ "$GITHUB_REF_NAME" = "v$KERNEL_VERSION" ] && want=$GITHUB_REF_NAME
-          [ "$GITHUB_REF_NAME" = "$want" ] \
-            || { echo "::error::tag $GITHUB_REF_NAME does not match kernel.env ($want)"; exit 1; }
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          bash scripts/check-release.sh "$GITHUB_REF_NAME" > /dev/null
       # kernel.env is the one list of flavors; the matrix follows it.
       - id: list
         run: |
@@ -127,7 +122,10 @@ jobs:
 
       # checkout leaves an annotated tag lightweight; fetch the tag object so
       # its message can become the release notes.
-      - run: git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+      - name: prepare checked release notes
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          bash scripts/check-release.sh "$GITHUB_REF_NAME" > notes.md
 
       - uses: actions/download-artifact@v8
         with:
@@ -162,15 +160,16 @@ jobs:
         # An annotated tag carries the release: its subject is the title, its
         # body the notes. A lightweight tag falls back to generated notes.
         run: |
-          if [ "$(git cat-file -t "$GITHUB_REF_NAME")" = tag ]; then
-            git tag -l --format='%(contents:body)' "$GITHUB_REF_NAME" > notes.md
-            gh release create "$GITHUB_REF_NAME" \
-              --title "$(git tag -l --format='%(contents:subject)' "$GITHUB_REF_NAME")" \
+          ref="refs/tags/$GITHUB_REF_NAME"
+          if [ "$(git cat-file -t "$ref")" = tag ]; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag \
+              --title "$(git for-each-ref --format='%(contents:subject)' "$ref")" \
               --notes-file notes.md \
               repo/*
           else
-            gh release create "$GITHUB_REF_NAME" \
+            gh release create "$GITHUB_REF_NAME" --verify-tag \
               --title "$GITHUB_REF_NAME" \
               --generate-notes \
+              --notes "$(cat notes.md)" \
               repo/*
           fi

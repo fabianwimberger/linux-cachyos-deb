@@ -13,7 +13,7 @@ Three things, all public:
 | --- | --- | --- |
 | CachyOS Linux 7.3.4 source tarball | https://github.com/CachyOS/linux/releases/download/cachyos-7.3.4-1/cachyos-7.3.4-1.tar.gz | `CACHY_SHA256` in `kernel.env` |
 | Tarball signature | `cachyos-7.3.4-1.tar.gz.asc` next to it | `keys/cachyos-upstream.asc` |
-| This repository at tag `v7.3.4` (commit `84314e9`): `patches/`, `config/`, `docker/`, `scripts/`, `profiles/` | https://github.com/fabianwimberger/linux-cachyos-deb/tree/v7.3.4 | the tag |
+| This repository at tag `v7.3.4`: `patches/`, `config/`, `docker/`, `scripts/`, `profiles/` | https://github.com/fabianwimberger/linux-cachyos-deb/tree/v7.3.4 | the tag |
 
 The tarball plus this repository at that tag is the complete corresponding source for
 `linux-image-7.3.4-cachyos-{x64v4,x64v3,znver4}` and their headers packages.
