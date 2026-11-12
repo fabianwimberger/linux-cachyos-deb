@@ -29,6 +29,9 @@ jobs:
           sudo cp shellcheck-v0.11.0/shellcheck /usr/local/bin/
           shellcheck -S warning -s bash scripts/*.sh
 
+      - name: verify corresponding source
+        run: bash scripts/check-release.sh > /dev/null
+
   config:
     runs-on: ubuntu-26.04
     # Source fetch + per-flavor config generation only, no compile. The real
