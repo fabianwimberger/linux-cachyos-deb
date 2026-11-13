@@ -106,7 +106,8 @@ Following a new upstream release is a `kernel.env` edit and one build per flavor
 ```bash
 $EDITOR kernel.env          # new KERNEL_VERSION and CACHY_TAG, PKGREL=1, clear CACHY_SHA256
 make fetch                  # prints the hash to pin
-$EDITOR kernel.env          # paste the hash back
+$EDITOR kernel.env SOURCE-OFFER.md  # pin the hash and update the source offer
+bash scripts/check-release.sh
 bash scripts/gen-cachy-extras.sh   # refresh the upstream driver list
 git diff config/            # review it, and config/parity-review.txt
 rm -rf work/x64v3 work/x64v4 work/znver4
@@ -114,8 +115,9 @@ make everything
 ```
 
 A release is an annotated tag on `main` — `vX.Y.Z`, or `vX.Y.Z-N` when `PKGREL`
-is above 1. Its subject becomes the release title and its body the notes; the
-release build refuses a tag that does not match `kernel.env`.
+is above 1. Its subject becomes the release title and its body the notes.
+The release build checks the tag, source offer and source links against
+`kernel.env` and adds the matching source links to the notes.
 
 ## Not this
 
