@@ -6,7 +6,7 @@
 # It also reports, without adopting, symbols Ubuntu sets to `n` that CachyOS
 # enables. Those are not additions but disagreements, and they cannot be taken
 # automatically: some are the Ubuntu adaptations this project exists to keep.
-# They were invisible here until an audit found 24 policy symbols being dropped
+# They were invisible here until a review found 24 policy symbols being dropped
 # silently, so they are printed for a human to rule on and recorded in
 # config/parity-review.txt.
 . "$(dirname "$0")/lib.sh"
