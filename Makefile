@@ -10,8 +10,10 @@ export FLAVOR
 # taken as independent prerequisites and run concurrently.
 .NOTPARALLEL:
 
-.PHONY: image preflight fetch config build package repo sign profile profile-report profile-release bench bench-compare serve all everything clean distclean
+.PHONY: bump image preflight fetch config build package repo sign profile profile-report profile-release bench bench-compare serve all everything clean distclean
 
+# TAG=<CachyOS release tag>: pin its SHA-256, reset PKGREL, update SOURCE-OFFER.md, run check-release.sh
+bump:       ; @bash scripts/bump.sh $(TAG)
 image:      ; @docker build --build-arg LLVM_VERSION=$(shell . ./kernel.env && echo $$LLVM_VERSION) -t $(IMAGE) docker/
 preflight:  ; @bash scripts/preflight.sh
 fetch:      ; @bash scripts/fetch.sh

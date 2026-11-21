@@ -104,10 +104,8 @@ CPU, the per-option analysis, and the commands to reproduce are in
 Following a new upstream release is a `kernel.env` edit and one build per flavor:
 
 ```bash
-$EDITOR kernel.env          # new KERNEL_VERSION and CACHY_TAG, PKGREL=1, clear CACHY_SHA256
-make fetch                  # prints the hash to pin
-$EDITOR kernel.env SOURCE-OFFER.md  # pin the hash and update the source offer
-bash scripts/check-release.sh
+make bump TAG=cachyos-<version>-<n>   # pins the hash, resets PKGREL, updates SOURCE-OFFER.md, runs check-release.sh
+make fetch                  # verifies hash and signature
 bash scripts/gen-cachy-extras.sh   # refresh the upstream driver list
 git diff config/            # review it, and config/parity-review.txt
 rm -rf work/x64v3 work/x64v4 work/znver4
