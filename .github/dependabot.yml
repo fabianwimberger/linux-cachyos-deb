@@ -4,7 +4,24 @@ updates:
     directory: "/"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "19:00"
+      timezone: "Europe/Vienna"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
+
   - package-ecosystem: "docker"
     directory: "/docker"
     schedule:
       interval: "weekly"
+      day: "monday"
+      time: "19:00"
+      timezone: "Europe/Vienna"
+    groups:
+      minor-and-patch:
+        update-types:
+          - "minor"
+          - "patch"
